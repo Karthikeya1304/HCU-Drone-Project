@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ROS 2 / colcon
+build/
+install/
+log/
+
+# ROS bags / recorded data
+*.bag
+*.db3
+*.mcap
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary / backup files
+*.bak
+*.backup
+*.save
+*.swp
+*~
+
+# PX4 generated build files
+*.px4
+*.elf
+
+# Gazebo temporary files
+.gz/
