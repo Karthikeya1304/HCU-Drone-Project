@@ -11,11 +11,12 @@ class AddTimeField(Node):
         qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.pub = self.create_publisher(PointCloud2, '/lidar/points_timed', qos)
         self.sub = self.create_subscription(
-            PointCloud2, '/lidar/points', self.cb, qos)
+            PointCloud2, '/lidar/points/points', self.cb, qos)
 
     def cb(self, msg: PointCloud2):
         points = list(pc2.read_points(
             msg, field_names=('x', 'y', 'z', 'intensity', 'ring'), skip_nans=False))
+        points = [p for p in points if np.isfinite(p[0]) and np.isfinite(p[1]) and np.isfinite(p[2])]
         n = len(points)
 
         fields = [
