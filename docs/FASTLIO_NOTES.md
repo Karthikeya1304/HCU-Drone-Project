@@ -19,12 +19,16 @@
 
 ## Results so far
 - 4 m hop out and back: FAST-LIO y peak about 3.97 m (default world) and 4.00 m (forest), ends within a few cm of Gazebo truth.
-- 4 m square in the forest: loop closes within about 4 cm. Mid-loop corner readings not yet captured.
+- 4 m square in the forest: loop closes within about 4 cm. Corner readings are in the bullets below.
 - PX4 parameter NAV_DLL_ACT set to 0 (clears the no-GCS warning).
 - Hop odometry log (forest): altitude about 2.45 m, y peak 4.03 m and 4.09 m on two runs, back within 3 to 7 cm of the start.
 - Hop map (2026-10-12): 4,974,646 points, 22 of 30 trees seen, tree residual rms about 0.8 m after a best-fit shift and yaw.
 - Survey map (2026-10-12, scripts/survey_forest.py): 7,194,699 points, about 230 MB, extents x -24.2 to 25.2, y -13.1 to 37.0, z -0.61 to 6.22 m. All 30 trees matched against forest_lidar.sdf. Best-fit alignment yaw -0.27 degrees, shift (-0.03, -0.07) m, residual rms 0.28 m (median 0.21 m). The residual includes a near-face trunk bias of roughly 0.2 to 0.3 m, so it is not a precise accuracy figure. Matching method: centroid of points at z 0.5 to 2.0 m near each tree, re-centred on the aligned position.
 - The map ground footprint is an L-shape that matches the grasspatch layout in forest_lidar.sdf.
+- Fixed-heading square (2026-10-21), FAST-LIO at the corners against the commanded (0,4), (4,4), (4,0), (0,0): north (0.09, 3.97), east (3.93 to 4.12, 3.89 to 3.93), south (4.04, -0.10), home (0.07, -0.06). The logger samples only every 2 to 3 s, so there are one or two readings per corner, and none were checked against Gazebo truth.
+- Square with four 90 degree yaw turns (scripts/loop_yaw_test.py, 20 deg/s): FAST-LIO yaw plateaus at about -89.4, 180, 89 and 0.1 degrees (a right turn reads negative). The final yaw is within 0.1 degrees of the start, positions stay within about 0.15 m of the corners through the turns, and the start-to-end offset is about 7.5 cm, appearing at takeoff.
+- Sensor noise: the x500_lidar_3d model had no LiDAR noise (the IMU, barometer and magnetometer in x500_base do). Added 2 cm Gaussian range noise in ~/PX4-Autopilot/Tools/simulation/gz/models/x500_lidar_3d/model.sdf, with a backup model.sdf.bak_noise in the same folder (this file is outside the repo). Verified with two scans from a stationary drone: range difference std 0.0286 m (expected 0.028).
+- Survey repeated with the noise (2026-10-21, 6,156,897 points): 30 of 30 trees, yaw -0.41 degrees, shift (-0.03, -0.07) m, residual rms 0.28 m (median 0.21 m), the same as the clean run. FAST-LIO start-to-end offset 13.5 cm, against Gazebo truth 9.3 cm (assuming a spawn at 0, 0), so about 5 cm of FAST-LIO error over about 106 m.
 
 ## Area survey
 - scripts/survey_forest.py is a copy of hop_test.py with a 10-waypoint loop at 2.5 m altitude and SPEED = 0.5 m/s (about 106 m). Waypoints are NED (north, east) metres from the start: (-3.5, -12), (10, -12), (16, 3), (24, 2), (28, 9), (26, 14), (14, 14), (13, 6), (3, 4), (-4, 3), then home. Planned clearance from every tree centre was at least 5.4 m (canopy width not accounted for).
@@ -39,4 +43,4 @@
 - Viewing: pcl_viewer and CloudCompare are not installed. Open3D and matplotlib are in the venv ~/venvs/o3d.
 
 ## Next
-Record FAST-LIO position at each corner of the square, fly the square with yaw turns, and try a faster or higher survey.
+Try a faster survey speed, investigate the home laptop takeoff flip.
