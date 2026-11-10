@@ -270,3 +270,86 @@ Before asking someone else to reproduce a result, record:
 
 This information makes the project easier to reproduce, review, and
 debug.
+
+## LiDAR obstacle avoidance (experimental)
+
+New files for this feature:
+
+-   `scripts/survey_forest_avoid8.py` --- survey with LiDAR obstacle
+    avoidance (latest version; `survey_forest_avoid.py` to
+    `survey_forest_avoid7.py` are earlier iterations).
+-   `px4_custom/gazebo/worlds/forest_lidar_box.sdf` --- copy of the forest
+    world with a 1 x 1 x 4 m red test box added.
+
+The script flies the survey waypoints and uses the raw LiDAR point cloud
+(`/lidar/points/points`) to avoid obstacles. It does not need FAST-LIO to
+be running.
+
+How it works:
+
+-   Only LiDAR points inside a corridor 1 m either side of the travel
+    direction count as blocking.
+-   Speed falls linearly from full at 4 m to zero at 2 m from the nearest
+    point ahead.
+-   Avoidance only acts above 1.5 m altitude, within an elevation band of
+    -8 to +15 degrees, so the ground is ignored.
+-   If blocked for 0.5 s, it picks the side with more clearance and
+    sidesteps 3 m, then resumes toward the waypoint.
+-   After 4 detours at one waypoint it skips to the next waypoint.
+-   The setpoint stops advancing if it gets more than 1.5 m ahead of the
+    drone.
+-   If no LiDAR data arrives for 1 s, the drone holds position.
+
+Test setup used so far (each step in its own terminal):
+
+1.  Copy the test world to PX4 and start Gazebo with it:
+
+``` bash
+cp ~/HCU-Drone-Project/px4_custom/gazebo/worlds/forest_lidar_box.sdf \
+   ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cd ~/PX4-Autopilot
+export GZ_CONFIG_PATH=/usr/share/gz:$GZ_CONFIG_PATH
+export GZ_SIM_RESOURCE_PATH=$HOME/PX4-Autopilot/Tools/simulation/gz/models
+export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/PX4-Autopilot/build/px4_sitl_default/src/modules/simulation/gz_plugins
+gz sim -v 4 -r ~/PX4-Autopilot/Tools/simulation/gz/worlds/forest_lidar_box.sdf
+```
+
+2.  Start PX4, then at the `pxh>` prompt run `param set NAV_DLL_ACT 0`:
+
+``` bash
+cd ~/PX4-Autopilot/build/px4_sitl_default/bin && PX4_GZ_WORLD=forest PX4_SIM_MODEL=x500_lidar_3d PX4_SYS_AUTOSTART=4022 ./px4 -s etc/init.d-posix/rcS -w ~/PX4-Autopilot/build/px4_sitl_default/rootfs
+```
+
+3.  Start the DDS agent and the LiDAR bridge:
+
+``` bash
+~/Micro-XRCE-DDS-Agent/build/MicroXRCEAgent udp4 -p 8888
+
+source /opt/ros/jazzy/setup.bash
+ros2 run ros_gz_bridge parameter_bridge '/lidar/points/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked'
+```
+
+4.  Run the script:
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+python3 ~/HCU-Drone-Project/scripts/survey_forest_avoid8.py
+```
+
+To stop early, run `commander land` at the `pxh>` prompt and wait for
+"Disarmed by landing" before pressing Ctrl+C in the script terminal.
+Stopping the script first makes PX4 fall back to return-to-launch.
+
+Status and limitations:
+
+-   Simulation only. One full survey run completed with 0 skipped
+    waypoints and 2 detours. It has not been tested more widely.
+-   Waypoints `wp9` and `wp10` were moved in this version because the
+    earlier positions caused repeated stalls. The cause was not fully
+    identified.
+-   It only detects obstacles ahead and sidesteps. It is not a path
+    planner and does not map the area.
+-   Each blocking event logs a `BLOCK` line with the distance ahead,
+    sideways offset and height of the nearest point, which helps diagnose
+    stalls.
