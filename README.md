@@ -353,3 +353,115 @@ Status and limitations:
 -   Each blocking event logs a `BLOCK` line with the distance ahead,
     sideways offset and height of the nearest point, which helps diagnose
     stalls.
+
+## Full test run with FAST-LIO map and images (experimental)
+
+Runs the obstacle-avoidance survey together with FAST-LIO, then saves a
+path image and a 3D map image. Each step goes in its own terminal tab and
+stays untouched while the others run. Simulation only.
+
+New helper scripts: `scripts/plot_path.py` (path image from the newest
+`~/avoid8_*.log`) and `scripts/render_map.py` (3D map image from the newest
+FAST-LIO `.pcd`). Both refuse to overwrite an existing image.
+
+**Before the first run:** back up any old map, because FAST-LIO overwrites
+its output at shutdown:
+
+``` bash
+cd ~/fastlio_ws/src/FAST_LIO_ROS2/PCD && for f in *.pcd; do [ -f "$f" ] && cp -n "$f" "${f%.pcd}_backup_$(date +%Y%m%d_%H%M%S).pcd"; done; ls -lh
+```
+
+**A. Gazebo** (box world; `cp -n` never overwrites):
+
+``` bash
+cp -n ~/HCU-Drone-Project/px4_custom/gazebo/worlds/forest_lidar_box.sdf ~/PX4-Autopilot/Tools/simulation/gz/worlds/
+cd ~/PX4-Autopilot
+export GZ_CONFIG_PATH=/usr/share/gz:$GZ_CONFIG_PATH
+export GZ_SIM_RESOURCE_PATH=$HOME/PX4-Autopilot/Tools/simulation/gz/models
+export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/PX4-Autopilot/build/px4_sitl_default/src/modules/simulation/gz_plugins
+gz sim -v 4 -r ~/PX4-Autopilot/Tools/simulation/gz/worlds/forest_lidar_box.sdf
+```
+
+**B. PX4** (wait for `Ready for takeoff!`, then at `pxh>` run
+`param set NAV_DLL_ACT 0` and `param show NAV_DLL_ACT`, which should show 0):
+
+``` bash
+cd ~/PX4-Autopilot/build/px4_sitl_default/bin && PX4_GZ_WORLD=forest PX4_SIM_MODEL=x500_lidar_3d PX4_SYS_AUTOSTART=4022 ./px4 -s etc/init.d-posix/rcS -w ~/PX4-Autopilot/build/px4_sitl_default/rootfs
+```
+
+**C. DDS agent:**
+
+``` bash
+~/Micro-XRCE-DDS-Agent/build/MicroXRCEAgent udp4 -p 8888
+```
+
+**D. LiDAR bridge:**
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+ros2 run ros_gz_bridge parameter_bridge '/lidar/points/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked'
+```
+
+**E. IMU bridge** (forest world topic):
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+ros2 run ros_gz_bridge parameter_bridge '/world/forest/model/x500_lidar_3d_0/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
+```
+
+**F. Time patch** (publishes `/lidar/points_timed`):
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+source ~/fastlio_ws/install/setup.bash
+ros2 run lidar_time_patch $(ros2 pkg executables lidar_time_patch | awk '{print $2}' | head -1)
+```
+
+**G. FAST-LIO** (start while the drone is still on the ground, wait about
+10 s, and check that `ros2 topic hz /Odometry` shows about 10 Hz before
+flying):
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+source ~/fastlio_ws/install/setup.bash
+ros2 launch fast_lio mapping.launch.py config_path:=$HOME/fastlio_ws/src/FAST_LIO_ROS2/config config_file:=gz_x500_forest.yaml rviz:=false
+```
+
+**H. Survey flight** (log saved with `tee`; the script lands by itself and
+ends about 20 s after `LAND command sent`):
+
+``` bash
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+python3 ~/HCU-Drone-Project/scripts/survey_forest_avoid8.py 2>&1 | tee ~/avoid8_$(date +%H%M%S).log
+```
+
+To stop early, run `commander land` at the `pxh>` prompt and wait for
+"Disarmed by landing" before pressing Ctrl+C in the script tab.
+
+**I. Save the map.** After the drone has landed, press Ctrl+C in the
+FAST-LIO tab (G). The `.pcd` is written only at that moment.
+
+**J. Save and open the images:**
+
+``` bash
+python3 ~/HCU-Drone-Project/scripts/plot_path.py
+xdg-open "$(ls -t ~/avoid8_*_path.png | head -1)"
+python3 ~/HCU-Drone-Project/scripts/render_map.py
+```
+
+Matplotlib is needed: `pip install --break-system-packages matplotlib`.
+
+**K. Shutdown:** Ctrl+C in the survey tab, F, E, D, C; type `shutdown` at
+`pxh>`; close Gazebo last. Then check nothing is left:
+
+``` bash
+ps aux | grep -iE "gz sim|gzserver|px4|MicroXRCEAgent|parameter_bridge|survey_forest|fast_lio|fastlio_mapping|add_time_field" | grep -v grep; echo CHECK_DONE
+```
+
+Notes:
+
+-   The map is in FAST-LIO's own frame, which starts at the drone's takeoff
+    point, so it does not line up with Gazebo's world coordinates.
+-   Running FAST-LIO and the avoidance script together has not been tested
+    for long. If the LiDAR rate drops a lot, treat the map with caution.
